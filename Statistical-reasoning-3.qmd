@@ -1,0 +1,183 @@
+---
+title: "Statistical-reasoning-3-multiple-regression-and-DAGs"
+author: "Jake Metzger"
+format: pdf
+editor: visual
+---
+
+```{r}
+# Run this to install some data packages
+#install.packages("dagitty")
+library(brms) # for statistics
+library(tidyverse) # for data wrangling
+library(dagitty)
+
+
+```
+
+### Q1.1 Make a DAG
+
+```{r}
+our_dag <- dagitty (dag {
+Unicorns [pos="-1.351,0.058"]
+Alligator [pos="-0.320,-0.898"]
+Bats [pos="-0.320,0.159"]
+Cats [pos="0.673,-0.038"]
+Xylophone [pos="-1.351,0.937"]
+Yam [pos="0.665,0.922"]
+Unicorns -> Bats
+Unicorns -> Xylophone
+Unicorns <- Alligator
+Alligator -> Cats
+Cats -> Bats
+Cats -> Yam
+Xylophone -> Yam
+}
+)
+```
+
+### Q1.2 Identify forks
+
+U \<- A -\> C
+
+X \<- U -\> B
+
+B \<- C -\> Y
+
+### Q1.3 Identify colliders
+
+U -\> B \<- C
+
+X -\> Y \<- C
+
+### Q1.4 Modify the DAG
+
+![](images/clipboard-1478889505.png)
+
+### Q1.5 Identify paths X to Y
+
+1.  X -\> Y
+2.  X \<- U -\> B \<-C -\> Y
+3.  X \<- U -\> B \<-C \<- V -\> Y
+4.  X \<- U \<- A -\> C -\> Y
+5.  X \<- U \<- A -\> C \<- V -\> Y
+
+### Q1.6 Identify open backdoor paths
+
+1.  X \<- U \<- A -\> C -\> Y
+2.  X \<- U \<- A -\> C \<- V -\> Y
+
+### Q1.7 Identify variables to close the backdoor(s)
+
+A
+
+# 2. Foxes: Regression practice informed by DAGs
+
+```{r}
+# Load in the fox data
+#data(foxes)
+foxes <- read.csv('https://raw.githubusercontent.com/rmcelreath/rethinking/refs/heads/master/data/foxes.csv', sep = ';')
+```
+
+```{r}
+# Check out the fox data
+?foxes
+head(foxes)
+```
+
+### Q2.1 Identify the fundamental relations in the fox DAG
+
+Fork 1: W \<- AvF -\> GS
+
+Pipe 1: Ar –\> AvF -\> W
+
+Pipe 2: Ar –\> AvF -\> GS
+
+Pipe 3: AvF –\> GS -\> W
+
+Collider: AvF -\> W \<- GS
+
+No Descentdants!
+
+## Total causal influence of area on weight
+
+```{r}
+# a function to scale and center. from rethinking package
+standardize <- function(x) {
+    x <- scale(x)
+    z <- as.numeric(x)
+    attr(z,"scaled:center") <- attr(x,"scaled:center")
+    attr(z,"scaled:scale") <- attr(x,"scaled:scale")
+    return(z)
+}
+```
+
+```{r}
+fox_dat <- foxes %>%
+  as_tibble() %>%
+  select(area, avgfood, weight, groupsize) %>%
+  mutate(across(everything(), standardize))
+```
+
+```{r}
+n <- 1000
+priorsims <- tibble(group = seq_len(n),
+       alpha = rnorm(n, 0, 0.2), # prior for alpha
+       beta = rnorm(n, 0, 2)) %>% # prior for beta
+  expand(nesting(group, alpha, beta), # the expand function gives us all possible combinations of the arguments
+         area = seq(from = -2, to = 2, length.out = 100)) %>% # set up a range of areas
+  mutate(weight = alpha + beta * area) # calculate weight from the parameters and area
+```
+
+Make a plot of what these priors imply.
+
+```{r}
+ggplot(priorsims, aes(x = area, y = weight, group = group)) +
+  geom_line(alpha = 1 / 10) +
+  labs(x = "Standardized Area", y = "Standardized Weight")
+
+```
+
+### Q2.2 Minimum fox weight
+
+2 kg (assuming adults)
+
+```{r}
+stndmin <- (2 - mean(foxes$weight)) / sd(foxes$weight)
+```
+
+### Q2.3 Maximum fox weight
+
+10kg - chonky
+
+```{r}
+
+stndmax <- (10 - mean(foxes$weight)) / sd(foxes$weight)
+```
+
+### Q2.4 Modify simulation plot
+
+```{r}
+n <- 1000
+priorsmod <- tibble(group = seq_len(n),
+       alpha = rnorm(n, 0, 0.2), # prior for alpha
+       beta = rnorm(n, 0, 2)) %>% # prior for beta
+  expand(nesting(group, alpha, beta), # the expand function gives us all possible combinations of the arguments
+         area = seq(from = -2, to = 2, length.out = 100)) %>% # set up a range of areas
+  mutate(weight = alpha + beta * area) # calculate weight from the parameters and area
+```
+
+remake your prior predictive simulation plot and add two horizontal lines
+
+```{r}
+ggplot(priorsmod, aes(x = area, y = weight, group = group)) +
+  geom_line(alpha = 1 / 10) +
+  labs(x = "Standardized Area", y = "Standardized Weight") +
+  geom_hline(yintercept=stndmin) + 
+  geom_hline(yintercept=stndmax)
+
+```
+
+### Q2.5 Evaluate prior predictive simulation
+
+Do your priors seem reasonable? You haven't seen any data yet, though you have marked out the minimum and maximum weights you expect foxes to be. Do your priors greatly exceed those values? Please explain your thinking.
